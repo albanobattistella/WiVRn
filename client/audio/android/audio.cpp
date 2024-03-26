@@ -21,6 +21,11 @@
 #include "wivrn_client.h"
 #include "xr/instance.h"
 
+#ifdef QUERY_AUDIO_JAVA
+#include "application.h"
+#include "jnipp.h"
+#endif
+
 #include "spdlog/spdlog.h"
 #include <aaudio/AAudio.h>
 #include <cassert>
@@ -195,6 +200,32 @@ void wivrn::android::audio::operator()(xrt::drivers::wivrn::audio_data && data)
 
 void wivrn::android::audio::get_audio_description(xrt::drivers::wivrn::from_headset::headset_info_packet & info)
 {
+#ifdef QUERY_AUDIO_JAVA
+	 * Incomplete code: query properties through java API
+	jni::object<""> act(application::native_app()->activity->clazz);
+
+	auto app = act.call<jni::object<"android/app/Application">>("getApplication");
+	auto ctx = app.call<jni::object<"android/content/Context">>("getApplicationContext");
+	auto audio_service_id = ctx.klass().field<jni::string>("AUDIO_SERVICE");
+	auto audio_manager = ctx.call<jni::object<"java/lang/Object">>("getSystemService", audio_service_id);
+
+	auto devices = audio_manager.call<jni::array<jni::object<"android/media/AudioDeviceInfo">>>("getDevices", jni::Int(3));
+	spdlog::info("enumerate audio devices");
+	for (int i = 0 ; i < devices.size() ; ++i)
+	{
+		spdlog::info("{}", i);
+		auto device = devices[i];
+		auto id = device.call<jni::Int>("getId");
+		spdlog::info("\tId: {}", id.value);
+		auto type = device.call<jni::Int>("getType");
+		spdlog::info("\tType: {}", type.value);
+		auto address = device.call<jni::string>("getAddress");
+		spdlog::info("\tAddress: {}", std::string(address));
+		//auto name = device.call<jni::object<"java.lang.CharSequence">>("getProductName").call<jni::string>("toString");
+		//spdlog::info("\tName: {}", std::string(name));
+	}
+#endif
+
 	AAudioStreamBuilder * builder;
 
 	aaudio_result_t result = AAudio_createStreamBuilder(&builder);
