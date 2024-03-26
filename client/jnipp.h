@@ -296,17 +296,47 @@ struct array
 		return std::string("[") + T::type();
 	}
 
-	std::unique_ptr<std::remove_pointer_t<jobjectArray>, details::deleter> self;
+	constexpr static const auto call_method = &_JNIEnv::CallObjectMethod;
+
+	std::unique_ptr<std::remove_pointer_t<jobject>, details::deleter> self;
 
 	auto handle() const
 	{
 		return self.get();
 	}
 
-	array(T& element)
+	array(T & element)
 	{
 		auto & env = jni_thread::env();
 		self.reset(env.NewObjectArray(1, element.klass(), element));
+	}
+	array(jobject a)
+	{
+		auto & env = jni_thread::env();
+		if (a)
+			self.reset((jobjectArray)env.NewLocalRef(a));
+	}
+
+	auto size()
+	{
+		auto & env = jni_thread::env();
+		return env.GetArrayLength((jarray)self.get());
+	}
+
+	T operator[](int element)
+	{
+		// FIXME: implement other types
+		auto & env = jni_thread::env();
+		if constexpr (std::is_same_v<T, jni::Int>)
+		{
+			jint res;
+			env.GetIntArrayRegion((jintArray)self.get(), element, 1, &res);
+			return res;
+		}
+		else
+		{
+			return env.GetObjectArrayElement((jobjectArray)self.get(), element);
+		}
 	}
 };
 
