@@ -20,8 +20,34 @@
 #include "application.h"
 #include "stream.h"
 #include "utils/ranges.h"
+#include "xr/check.h"
+#include <ranges>
 #include <spdlog/spdlog.h>
 #include <thread>
+
+static uint8_t cast_flags(XrSpaceLocationFlags location, XrSpaceVelocityFlags velocity)
+{
+	uint8_t flags = 0;
+	if (location & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)
+		flags |= from_headset::tracking::orientation_valid;
+
+	if (location & XR_SPACE_LOCATION_POSITION_VALID_BIT)
+		flags |= from_headset::tracking::position_valid;
+
+	if (velocity & XR_SPACE_VELOCITY_LINEAR_VALID_BIT)
+		flags |= from_headset::tracking::linear_velocity_valid;
+
+	if (velocity & XR_SPACE_VELOCITY_ANGULAR_VALID_BIT)
+		flags |= from_headset::tracking::angular_velocity_valid;
+
+	if (location & XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT)
+		flags |= from_headset::tracking::orientation_tracked;
+
+	if (location & XR_SPACE_LOCATION_POSITION_TRACKED_BIT)
+		flags |= from_headset::tracking::position_tracked;
+
+	return flags;
+}
 
 static from_headset::tracking::pose locate_space(device_id device, XrSpace space, XrSpace reference, XrTime time)
 {
@@ -36,33 +62,13 @@ static from_headset::tracking::pose locate_space(device_id device, XrSpace space
 
 	xrLocateSpace(space, reference, time, &location);
 
-	from_headset::tracking::pose res{
+	return from_headset::tracking::pose{
 	        .device = device,
 	        .pose = location.pose,
 	        .linear_velocity = velocity.linearVelocity,
 	        .angular_velocity = velocity.angularVelocity,
-	        .flags = 0,
+	        .flags = cast_flags(location.locationFlags, velocity.velocityFlags),
 	};
-
-	if (location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)
-		res.flags |= from_headset::tracking::orientation_valid;
-
-	if (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)
-		res.flags |= from_headset::tracking::position_valid;
-
-	if (velocity.velocityFlags & XR_SPACE_VELOCITY_LINEAR_VALID_BIT)
-		res.flags |= from_headset::tracking::linear_velocity_valid;
-
-	if (velocity.velocityFlags & XR_SPACE_VELOCITY_ANGULAR_VALID_BIT)
-		res.flags |= from_headset::tracking::angular_velocity_valid;
-
-	if (location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT)
-		res.flags |= from_headset::tracking::orientation_tracked;
-
-	if (location.locationFlags & XR_SPACE_LOCATION_POSITION_TRACKED_BIT)
-		res.flags |= from_headset::tracking::position_tracked;
-
-	return res;
 }
 
 namespace
@@ -139,12 +145,49 @@ void scenes::stream::tracking()
 	// Runtime may use JNI and needs the thread to be attached
 	application::instance().setup_jni();
 #endif
-	std::vector<std::pair<device_id, XrSpace>> spaces = {
-	        {device_id::HEAD, application::view()},
-	        {device_id::LEFT_AIM, application::left_aim()},
-	        {device_id::LEFT_GRIP, application::left_grip()},
-	        {device_id::RIGHT_AIM, application::right_aim()},
-	        {device_id::RIGHT_GRIP, application::right_grip()}};
+
+	std::vector<XrSpace> spaces = {
+	        application::view(),
+	        application::left_aim(),
+	        application::left_grip(),
+	        application::right_aim(),
+	        application::right_grip(),
+	};
+	std::vector<device_id> space_devices = {
+	        device_id::HEAD,
+	        device_id::LEFT_AIM,
+	        device_id::LEFT_GRIP,
+	        device_id::RIGHT_AIM,
+	        device_id::RIGHT_GRIP,
+	};
+
+#ifdef XR_KHR_locate_spaces
+	PFN_xrLocateSpaces xrLocateSpaces = nullptr;
+	auto & xr_instance = application::get_xr_instance();
+	if (xr_instance.has_extension(XR_KHR_LOCATE_SPACES_EXTENSION_NAME))
+	{
+		xrLocateSpaces = xr_instance.get_proc<PFN_xrLocateSpacesKHR>("xrLocateSpacesKHR");
+	}
+	std::vector<XrSpaceVelocityDataKHR> velocities(spaces.size());
+	std::vector<XrSpaceLocationDataKHR> locations(spaces.size());
+	XrSpacesLocateInfoKHR spaces_locate_info{
+	        .type = XR_TYPE_SPACES_LOCATE_INFO_KHR,
+	        .baseSpace = local_floor,
+	        .spaceCount = uint32_t(spaces.size()),
+	        .spaces = spaces.data(),
+	};
+	XrSpaceVelocitiesKHR velocity{
+	        .type = XR_TYPE_SPACE_VELOCITIES_KHR,
+	        .velocityCount = uint32_t(velocities.size()),
+	        .velocities = velocities.data(),
+	};
+	XrSpaceLocationsKHR location{
+	        .type = XR_TYPE_SPACE_LOCATIONS_KHR,
+	        .next = &velocity,
+	        .locationCount = uint32_t(locations.size()),
+	        .locations = locations.data(),
+	};
+#endif
 
 	XrSpace view_space = application::view();
 	XrDuration tracking_period = 1'000'000; // Send tracking data every 1ms
@@ -190,12 +233,37 @@ void scenes::stream::tracking()
 					}
 
 					packet.flags = flags;
-
 					packet.device_poses.clear();
-					std::lock_guard lock(local_floor_mutex);
-					for (auto [device, space]: spaces)
+
+#ifdef XR_KHR_locate_spaces
+					if (xrLocateSpaces)
 					{
-						packet.device_poses.push_back(locate_space(device, space, local_floor, t0 + Δt));
+						std::lock_guard lock(local_floor_mutex);
+						spaces_locate_info.baseSpace = local_floor;
+						spaces_locate_info.time = packet.timestamp;
+						check(xrLocateSpaces(session, &spaces_locate_info, &location), "xrLocateSpaces");
+						for (size_t i = 0; i < spaces.size(); ++i)
+						{
+							const auto & location = locations[i];
+							const auto & velocity = velocities[i];
+							const auto device = space_devices[i];
+							packet.device_poses.push_back(from_headset::tracking::pose{
+							        .device = device,
+							        .pose = location.pose,
+							        .linear_velocity = velocity.linearVelocity,
+							        .angular_velocity = velocity.angularVelocity,
+							        .flags = cast_flags(location.locationFlags, velocity.velocityFlags),
+							});
+						}
+					}
+					else
+#endif
+					{
+						std::lock_guard lock(local_floor_mutex);
+						for (auto [device, space]: utils::zip(space_devices, spaces))
+						{
+							packet.device_poses.push_back(locate_space(device, space, local_floor, t0 + Δt));
+						}
 					}
 
 					t.pause();

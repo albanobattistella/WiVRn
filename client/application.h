@@ -339,6 +339,11 @@ public:
 		// #endif
 	}
 
+	static xr::instance & get_xr_instance()
+	{
+		return instance().xr_instance;
+	}
+
 	static XrTime now()
 	{
 		return instance().xr_instance.now();

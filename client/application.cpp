@@ -729,6 +729,9 @@ void application::initialize()
 	opt_extensions.push_back(XR_EXT_HAND_TRACKING_EXTENSION_NAME);
 	opt_extensions.push_back(XR_FB_PASSTHROUGH_EXTENSION_NAME);
 	opt_extensions.push_back(XR_HTC_PASSTHROUGH_EXTENSION_NAME);
+#ifdef XR_KHR_locate_spaces
+	opt_extensions.push_back(XR_KHR_LOCATE_SPACES_EXTENSION_NAME);
+#endif
 
 	for (const auto & i: interaction_profiles)
 	{
