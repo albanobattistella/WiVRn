@@ -21,6 +21,7 @@
 #include "encoder/video_encoder.h"
 #include "main/comp_compositor.h"
 #include "math/m_space.h"
+#include "render/render_interface.h"
 #include "xrt_cast.h"
 #include <condition_variable>
 #include <list>
@@ -261,19 +262,11 @@ static bool comp_wivrn_check_ready(struct comp_target * ct)
 {
 	struct wivrn_comp_target * cn = (struct wivrn_comp_target *)ct;
 	// This function is called before on each frame before reprojection
-	// hijack it so that we can dynamically change ATW
-	cn->c->debug.atw_off = true;
-	for (int eye = 0; eye < 2; ++eye)
-	{
-		const auto & slot = cn->c->base.slot;
-		if (slot.layer_count > 1 or
-		    slot.layers[0].data.type != XRT_LAYER_STEREO_PROJECTION)
-		{
-			// We are not in the trivial single stereo projection layer
-			// reprojection must be done
-			cn->c->debug.atw_off = false;
-		}
-	}
+	// hijack it so that we can dynamically change fov
+	cn->cnx->update_fov(cn->c->frame.rendering.predicted_display_time_ns);
+
+	render_calc_uv_to_tangent_lengths_rect(&cn->c->xdev->hmd->distortion.fov[0], &cn->c->nr.distortion.uv_to_tanangle[0]);
+	render_calc_uv_to_tangent_lengths_rect(&cn->c->xdev->hmd->distortion.fov[1], &cn->c->nr.distortion.uv_to_tanangle[1]);
 	return true;
 }
 

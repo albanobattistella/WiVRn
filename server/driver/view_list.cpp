@@ -20,10 +20,11 @@
 #include "view_list.h"
 #include "pose_list.h"
 #include "xrt_cast.h"
+#include <cmath>
 
 tracked_views view_list::interpolate(const tracked_views & a, const tracked_views & b, float t)
 {
-	tracked_views result = a;
+	tracked_views result = b;
 	result.relation = pose_list::interpolate(a.relation, b.relation, t);
 	return result;
 }
@@ -51,6 +52,23 @@ void view_list::update_tracking(const from_headset::tracking & tracking, const c
 		{
 			view.poses[eye] = xrt_cast(tracking.views[eye].pose);
 			view.fovs[eye] = xrt_cast(tracking.views[eye].fov);
+
+			if (tracking.production_timestamp < tracking.timestamp and tracking.flags & from_headset::tracking::flags::angular_velocity_valid)
+			{
+				auto & fov = view.fovs[eye];
+				double t = (tracking.timestamp - tracking.production_timestamp) / 1'000'000'000.;
+				t *= 0.3;
+				fov.angle_left -= std::abs(pose.angular_velocity.y * t);
+				fov.angle_right += std::abs(pose.angular_velocity.y * t);
+				fov.angle_up += std::abs(pose.angular_velocity.x * t);
+				fov.angle_down -= std::abs(pose.angular_velocity.x * t);
+
+				// clamp to roughly 85°
+				fov.angle_left = std::max(fov.angle_left, -1.5f);
+				fov.angle_down = std::max(fov.angle_down, -1.5f);
+				fov.angle_up = std::min(fov.angle_up, 1.5f);
+				fov.angle_right = std::min(fov.angle_right, 1.5f);
+			}
 		}
 
 		add_sample(tracking.production_timestamp, tracking.timestamp, view, offset);

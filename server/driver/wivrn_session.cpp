@@ -292,6 +292,11 @@ std::array<to_headset::video_stream_description::foveation_parameter, 2> wivrn_s
 	return hmd->get_foveation_parameters();
 }
 
+void wivrn_session::update_fov(uint64_t display_time_ns)
+{
+	hmd->update_fov(display_time_ns);
+}
+
 void wivrn_session::dump_time(const std::string & event, uint64_t frame, uint64_t time, uint8_t stream, const char * extra)
 {
 	if (feedback_csv)

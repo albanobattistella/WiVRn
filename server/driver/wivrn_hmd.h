@@ -70,4 +70,6 @@ public:
 	{
 		return foveation_parameters;
 	}
+
+	void update_fov(uint64_t display_time_ns);
 };

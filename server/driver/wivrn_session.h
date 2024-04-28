@@ -124,6 +124,8 @@ public:
 	}
 
 	std::array<to_headset::video_stream_description::foveation_parameter, 2> get_foveation_parameters();
+	// Shall be called before rendering to support dynamic fov
+	void update_fov(uint64_t display_time_ns);
 
 	void dump_time(const std::string & event, uint64_t frame, uint64_t time, uint8_t stream = -1, const char * extra = "");
 

@@ -346,6 +346,17 @@ void wivrn_hmd::get_view_poses(const xrt_vec3 * default_eye_relation,
 	}
 }
 
+void wivrn_hmd::update_fov(uint64_t display_time_ns)
+{
+	auto [extrapolation_time, view] = views.get_at(display_time_ns);
+	if (not(view.flags & XR_VIEW_STATE_POSITION_VALID_BIT))
+		return;
+	for (size_t eye = 0; eye < 2; ++eye)
+	{
+		hmd->distortion.fov[eye] = view.fovs[eye];
+	}
+}
+
 /*
  *
  * Functions
