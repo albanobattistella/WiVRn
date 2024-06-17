@@ -101,12 +101,17 @@ void scenes::stream::accumulate_metrics(XrTime predicted_display_time, const std
 
 	auto min_encode_begin = std::numeric_limits<decltype(blit_handles[0]->timing_info.encode_begin)>::max();
 	for (const auto & bh: blit_handles)
-		min_encode_begin = std::min(min_encode_begin, bh->timing_info.encode_begin);
+	{
+		if (bh)
+			min_encode_begin = std::min(min_encode_begin, bh->timing_info.encode_begin);
+	}
 
 	for (auto && [metrics, bh]: utils::zip(decoder_metrics, blit_handles))
 	{
 		if (metrics.size() != global_metrics.size())
 			metrics.resize(global_metrics.size());
+		if (not bh)
+			continue;
 
 		metrics[metrics_offset] = decoder_metric{
 		        // clang-format off
