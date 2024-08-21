@@ -597,12 +597,8 @@ void wivrn_comp_target::on_feedback(const from_headset::feedback & feedback, con
 	if (not o)
 		return;
 	pacer.on_feedback(feedback, o);
-	if (not feedback.sent_to_decoder)
-	{
-		if (encoders.size() < feedback.stream_index)
-			return;
-		encoders[feedback.stream_index]->SyncNeeded();
-	}
+	if (encoders.size() >= feedback.stream_index)
+		encoders[feedback.stream_index]->on_feedback(feedback);
 }
 
 void wivrn_comp_target::reset_encoders()
@@ -610,7 +606,7 @@ void wivrn_comp_target::reset_encoders()
 	pacer.reset();
 	for (auto & encoder: encoders)
 	{
-		encoder->SyncNeeded();
+		encoder->request_idr();
 	}
 	cnx->send_control(desc);
 }

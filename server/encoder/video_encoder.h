@@ -89,6 +89,19 @@ private:
 	std::atomic_bool sync_needed = true;
 	uint64_t last_idr_frame;
 
+#ifdef __cpp_lib_atomic_lock_free_type_aliases
+	using atomic_size = std::atomic_unsigned_lock_free;
+#else
+	using atomic_size = std::atomic_uint16_t;
+#endif
+	std::array<atomic_size, 4> sent_size;
+	std::array<atomic_size, 4> send_speed;
+	atomic_size network_mbytes_per_s;
+
+	// How much data are queued on the network
+	std::chrono::nanoseconds bucket;
+	std::chrono::steady_clock::time_point bucket_updated;
+
 	std::ofstream video_dump;
 
 	std::shared_ptr<sender> shared_sender;
@@ -108,8 +121,8 @@ public:
 	// called on present to submit command buffers for the image.
 	virtual void PresentImage(yuv_converter & src_yuv, vk::raii::CommandBuffer & cmd_buf) = 0;
 
-	// The other end lost a frame and needs to resynchronize
-	void SyncNeeded();
+	void request_idr();
+	void on_feedback(const from_headset::feedback&);
 
 	void Encode(wivrn_session & cnx,
 	            const to_headset::video_stream_data_shard::view_info_t & view_info,

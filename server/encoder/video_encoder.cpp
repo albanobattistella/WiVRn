@@ -39,6 +39,8 @@
 #include "video_encoder_x264.h"
 #endif
 
+static std::chrono::milliseconds max_bucket_size(2);
+
 namespace xrt::drivers::wivrn
 {
 
@@ -164,9 +166,46 @@ VideoEncoder::~VideoEncoder()
 		shared_sender->wait_idle(this);
 }
 
-void VideoEncoder::SyncNeeded()
+void VideoEncoder::request_idr()
 {
 	sync_needed = true;
+}
+
+template <typename T, typename U, typename V>
+static auto lerp_not_zero(T a, U b, V t) -> decltype(std::lerp(a, b, t))
+{
+	if (a == 0)
+		return b;
+	if (b == 0)
+		return a;
+	return std::lerp(a, b, t);
+}
+
+void VideoEncoder::on_feedback(const from_headset::feedback & feedback)
+{
+	if (not feedback.sent_to_decoder)
+		sync_needed = true;
+	if (shared_sender and feedback.sent_to_decoder and feedback.received_first_packet < feedback.received_last_packet)
+	{
+		auto size = sent_size[feedback.frame_index % sent_size.size()].exchange(0);
+		auto speed = send_speed[feedback.frame_index % send_speed.size()].exchange(0);
+		// Only count relevant samples
+		if (size > 10000)
+		{
+			auto new_speed = (size * 1'000) / (feedback.received_last_packet - feedback.received_first_packet);
+			if (speed and 10 * new_speed > 9 * speed)
+			{
+				network_mbytes_per_s = (11 * network_mbytes_per_s.load()) / 10;
+			}
+			else
+			{
+				network_mbytes_per_s = lerp_not_zero(
+				        new_speed,
+				        network_mbytes_per_s.load(),
+				        0.8);
+			}
+		}
+	}
 }
 
 void VideoEncoder::Encode(wivrn_session & cnx,
@@ -193,6 +232,9 @@ void VideoEncoder::Encode(wivrn_session & cnx,
 	timing_info = {
 	        .encode_begin = clock.to_headset(os_monotonic_get_ns()),
 	};
+	// reset data size for current frame
+	sent_size[frame_index % sent_size.size()] = 0;
+
 	cnx.dump_time("encode_begin", frame_index, os_monotonic_get_ns(), stream_idx, extra);
 
 	// Prepare the video shard template
@@ -214,6 +256,9 @@ void VideoEncoder::Encode(wivrn_session & cnx,
 
 void VideoEncoder::SendData(std::span<uint8_t> data, bool end_of_frame)
 {
+	// close enough (missing headers overhead)
+	sent_size[shard.frame_idx % sent_size.size()] += data.size_bytes();
+
 	std::lock_guard lock(mutex);
 	if (end_of_frame)
 	{
@@ -232,6 +277,12 @@ void VideoEncoder::SendData(std::span<uint8_t> data, bool end_of_frame)
 	shard.flags = to_headset::video_stream_data_shard::start_of_slice;
 	auto begin = data.begin();
 	auto end = data.end();
+	decltype(network_mbytes_per_s)::value_type send_mbytes_per_s;
+	if (shared_sender)
+	{
+		send_mbytes_per_s = network_mbytes_per_s.load();
+		send_speed[shard.frame_idx % send_speed.size()] = send_mbytes_per_s;
+	}
 	while (begin != end)
 	{
 		const size_t view_info_size = sizeof(to_headset::video_stream_data_shard::view_info_t);
@@ -249,6 +300,17 @@ void VideoEncoder::SendData(std::span<uint8_t> data, bool end_of_frame)
 		shard.payload = {begin, next};
 		try
 		{
+			if (shared_sender)
+			{
+				bucket -= std::chrono::steady_clock::now() - bucket_updated;
+				bucket_updated = std::chrono::steady_clock::now();
+				if (bucket.count() < 0)
+					bucket = decltype(bucket)(0);
+				if (bucket > max_bucket_size)
+					std::this_thread::sleep_for(std::min(bucket - max_bucket_size, std::chrono::nanoseconds(10'000'000)));
+				if (send_mbytes_per_s)
+					bucket += std::chrono::nanoseconds((1000 * shard.payload.size_bytes()) / send_mbytes_per_s);
+			}
 			cnx->send_stream(shard);
 		}
 		catch (...)
