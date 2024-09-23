@@ -266,7 +266,7 @@ jobs:
     name: Create release
     runs-on: ubuntu-22.04
     needs: [build-server, build-android, build-test-client, build-dissector, build-server-flatpak]
-    if: success() && startsWith(github.ref, 'refs/tags/')
+    if: success() #&& startsWith(github.ref, 'refs/tags/')
 
     steps:
     - uses: actions/checkout@v4
@@ -294,15 +294,15 @@ jobs:
         name: wivrn-server-x86_64
         path: flatpak
 
-    - name: Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ inputs.ref }}
-        generate_release_notes: true
-        draft: true
-        files: |
-          apk/*.apk
-          flatpak/*.flatpak
+    #- name: Release
+    #  uses: softprops/action-gh-release@v2
+    #  with:
+    #    tag_name: ${{ inputs.ref }}
+    #    generate_release_notes: true
+    #    draft: true
+    #    files: |
+    #      apk/*.apk
+    #      flatpak/*.flatpak
 
     - name: Update flatpak manifest for flathub
       run: |
@@ -325,11 +325,11 @@ jobs:
 
         git show
 
-    - name: Update release branch
-      run: |
-        cd wivrn
-        git fetch origin release
-        git push origin HEAD:release
+    #- name: Update release branch
+    #  run: |
+    #    cd wivrn
+    #    git fetch origin release
+    #    git push origin HEAD:release
 
   sync_fork_downstream:
     name: Sync fork downstream
