@@ -100,6 +100,31 @@ static void create_encoders(wivrn_comp_target * cn)
 
 	std::map<int, std::vector<std::shared_ptr<VideoEncoder>>> thread_params;
 
+#ifdef WIVRN_USE_VULKAN_ENCODE
+	if (std::ranges::any_of(cn->settings, [](const auto & item) { return item.encoder_name == encoder_vulkan; }))
+	{
+		auto & device = cn->wivrn_bundle->device;
+		cn->psc.video_command_pool = device.createCommandPool({
+		        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+		        .queueFamilyIndex = vk->encode_queue_family_index,
+		});
+		auto command_buffers = device.allocateCommandBuffers({
+		        .commandPool = *cn->psc.video_command_pool,
+		        .commandBufferCount = uint32_t(cn->psc.images.size()),
+		});
+		for (size_t i = 0; i < command_buffers.size(); ++i)
+		{
+			cn->psc.images[i].video_command_buffer = std::move(command_buffers[i]);
+			cn->psc.images[i].video_fence = device.createFence({});
+		}
+	}
+	else
+	{
+		for (auto & i: cn->psc.images)
+			i.video_command_buffer = nullptr;
+		cn->psc.video_command_pool = nullptr;
+	}
+#endif
 	for (auto & settings: cn->settings)
 	{
 		uint8_t stream_index = cn->encoders.size();
@@ -493,20 +518,68 @@ static VkResult comp_wivrn_present(struct comp_target * ct,
 	}
 
 	auto & command_buffer = cn->psc.command_buffer;
+	auto & psc_image = cn->psc.images[index];
+
+#ifdef WIVRN_USE_VULKAN_ENCODE
+	auto & video_command_buffer = psc_image.video_command_buffer;
+	vk::ImageMemoryBarrier2 video_barrier{
+	        .srcStageMask = vk::PipelineStageFlagBits2KHR::eTransfer,
+	        .srcAccessMask = vk::AccessFlagBits2::eMemoryRead,
+	        .dstStageMask = vk::PipelineStageFlagBits2KHR::eVideoEncodeKHR,
+	        .dstAccessMask = vk::AccessFlagBits2::eVideoEncodeReadKHR,
+	        .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+	        .newLayout = vk::ImageLayout::eVideoEncodeSrcKHR,
+	        .srcQueueFamilyIndex = vk->queue_family_index,
+	        .dstQueueFamilyIndex = vk->encode_queue_family_index,
+	        .image = psc_image.image,
+	        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+	                             .baseMipLevel = 0,
+	                             .levelCount = 1,
+	                             .baseArrayLayer = 0,
+	                             .layerCount = 1},
+	};
+	if (*video_command_buffer)
+	{
+		video_command_buffer.reset();
+		video_command_buffer.begin(vk::CommandBufferBeginInfo{
+		        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+		});
+
+		video_command_buffer.pipelineBarrier2({
+		        .imageMemoryBarrierCount = 1,
+		        .pImageMemoryBarriers = &video_barrier,
+		});
+	}
+#endif
 	command_buffer.reset();
-	command_buffer.begin(vk::CommandBufferBeginInfo{});
+	command_buffer.begin(vk::CommandBufferBeginInfo{
+	        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+	});
 
 	// Wait for encoders to be done with previous frame
 	for (auto status = cn->psc.status.load(); status != 0; status = cn->psc.status)
 		cn->psc.status.wait(status);
 
 	cn->wivrn_bundle->device.resetFences(*cn->psc.fence);
-	cn->psc.images[index].status = pseudo_swapchain::status_t::encoding;
+	psc_image.status = pseudo_swapchain::status_t::encoding;
 
 	for (auto & encoder: cn->encoders)
 	{
-		encoder->PresentImage(cn->psc.images[index].image, command_buffer);
+#ifdef WIVRN_USE_VULKAN_ENCODE
+		encoder->present_image(psc_image.image, video_command_buffer, *cn->psc.images[index].video_fence);
+#endif
+		encoder->present_image(psc_image.image, command_buffer);
 	}
+
+#ifdef WIVRN_USE_VULKAN_ENCODE
+	if (*video_command_buffer)
+	{
+		command_buffer.pipelineBarrier2({
+		        .imageMemoryBarrierCount = 1,
+		        .pImageMemoryBarriers = &video_barrier,
+		});
+	}
+#endif
 	command_buffer.end();
 	submit_info.setCommandBuffers(*command_buffer);
 
@@ -514,6 +587,18 @@ static VkResult comp_wivrn_present(struct comp_target * ct,
 		scoped_lock lock(vk->queue_mutex);
 		cn->wivrn_bundle->queue.submit(submit_info, *cn->psc.fence);
 	}
+#ifdef WIVRN_USE_VULKAN_ENCODE
+	if (*video_command_buffer)
+	{
+		cn->wivrn_bundle->device.resetFences(*psc_image.video_fence);
+		vk::SubmitInfo2 submit{};
+		vk::CommandBufferSubmitInfo cmd_info{
+		        .commandBuffer = *video_command_buffer,
+		};
+		submit.setCommandBufferInfos(cmd_info);
+		cn->wivrn_bundle->encode_queue.submit2(submit, *psc_image.video_fence);
+	}
+#endif
 
 	auto & view_info = cn->psc.view_info;
 	view_info.foveation = cn->cnx->get_foveation_parameters();
