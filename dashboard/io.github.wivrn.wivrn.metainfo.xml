@@ -8,7 +8,7 @@
 	<description>
 		<p>WiVRn allows you to run your VR games from your PC and play them from a standalone headset.</p>
 
-		<p>You will need to install the WiVRn client on your headset from the APK on Github.</p>
+		<p>You will need to install the WiVRn client on your headset from the Meta Store or by following the wizard in the application.</p>
 
 		<p>Supported headsets:</p>
 		<ul>
@@ -48,8 +48,12 @@
 
 	<screenshots>
 		<screenshot type="default">
-			<image type="source">https://wivrn.github.io/assets/img/mountains.jpeg</image>
-			<caption>A caption</caption>
+			<image type="source">https://wivrn.github.io/screenshots/en/dashboard.png</image>
+			<caption>Dashboard</caption>
+		</screenshot>
+		<screenshot>
+			<image type="source">https://wivrn.github.io/screenshots/en/settings.png</image>
+			<caption>Settings</caption>
 		</screenshot>
 	</screenshots>
 
@@ -66,6 +70,25 @@
 	<content_rating type="oars-1.1" />
 
 	<releases>
+		<release version="0.19.2" date="2024-10-XX">
+			<url type="details">https://github.com/WiVRn/WiVRn/releases/tag/v0.19.2</url>
+			<description>
+				<ul>
+					<li>Add dashboard GUI</li>
+					<li>Network latency improvements</li>
+				</ul>
+			</description>
+		</release>
+
+		<release version="0.19.1" date="2024-09-21">
+			<url type="details">https://github.com/WiVRn/WiVRn/releases/tag/v0.19.1</url>
+			<description>
+				<ul>
+					<li>Fix possible crash when requesting Android permissions on client</li>
+				</ul>
+			</description>
+		</release>
+
 		<release version="0.19" date="2024-09-19">
 			<url type="details">https://github.com/WiVRn/WiVRn/releases/tag/v0.19</url>
 			<description>
