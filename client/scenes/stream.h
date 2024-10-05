@@ -84,6 +84,7 @@ private:
 	std::thread network_thread;
 	std::mutex tracking_control_mutex;
 	to_headset::tracking_control tracking_control;
+	std::array<std::atomic<interaction_profile>, 2> interaction_profiles; // left and right hand
 	std::atomic<bool> recenter_requested = false;
 	std::atomic<XrDuration> display_time_phase = 0;
 	std::atomic<XrDuration> display_time_period = 0;
@@ -137,6 +138,8 @@ public:
 	void render(const XrFrameState &) override;
 	void on_focused() override;
 	void on_unfocused() override;
+	void on_reference_space_changed(XrReferenceSpaceType space, XrTime) override;
+	void on_interaction_profile_changed() override;
 
 	void operator()(to_headset::handshake &&) {};
 	void operator()(to_headset::video_stream_data_shard &&);
@@ -233,6 +236,5 @@ private:
 
 	void accumulate_metrics(XrTime predicted_display_time, const std::vector<std::shared_ptr<wivrn::shard_accumulator::blit_handle>> & blit_handles, const gpu_timestamps & timestamps);
 	XrCompositionLayerQuad plot_performance_metrics(XrTime predicted_display_time);
-	void on_reference_space_changed(XrReferenceSpaceType space, XrTime) override;
 };
 } // namespace scenes

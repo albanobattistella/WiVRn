@@ -133,6 +133,7 @@ public:
 	void on_focused() override;
 	void on_session_state_changed(XrSessionState state) override;
 	void on_reference_space_changed(XrReferenceSpaceType, XrTime) override;
+	void on_interaction_profile_changed() override;
 
 	static meta & get_meta_scene();
 };

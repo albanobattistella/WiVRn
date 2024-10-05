@@ -806,6 +806,12 @@ void scenes::lobby::on_reference_space_changed(XrReferenceSpaceType, XrTime)
 	recenter_gui = true;
 }
 
+void scenes::lobby::on_interaction_profile_changed()
+{
+	if (next_scene)
+		next_scene->on_interaction_profile_changed();
+}
+
 scene::meta & scenes::lobby::get_meta_scene()
 {
 	static meta m{
