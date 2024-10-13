@@ -33,8 +33,13 @@ qt_add_executable(wivrn-dashboard
         steam_app.h
         adb.cpp
         adb.h
-        ../wivrn-dashboard.qrc
         ${CMAKE_CURRENT_BINARY_DIR}/version.cpp
+)
+
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../images/wivrn.svg PROPERTIES QT_RESOURCE_ALIAS "images/wivrn.svg")
+
+qt_add_resources(wivrn-dashboard rcc PREFIX / FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../images/wivrn.svg
 )
 
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../dbus/io.github.wivrn.Server.xml PROPERTIES INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/wivrn_qdbus_types.h")
